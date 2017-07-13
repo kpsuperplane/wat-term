@@ -8,6 +8,9 @@ var KEY_I = 73;
 var KEY_J = 74;
 var KEY_K = 75;
 var KEY_L = 76;
+var KEY_ENTER = 13;
+var DIR_TYPE = "dir";
+var FILE_TYPE = "file";
 var DELIMITER = "-";
 
 var windowWidth;
@@ -16,7 +19,62 @@ var selectedWindow = "0" + DELIMITER + "0";
 
 var defaultWindow = '<div class="windowWrapper" style="height: $(SIZE)" id="$(FULLID)" tabindex="1"><div class="window" id="$(ID)">$(TERM)</div></div>';
 var defaultColumn = '<div class="column" id="$(ID)" style="width: $(SIZE)">$(CONTENT)</div>';
-var defaultTerminal = '<div class="hidden"><input type="text" class="textbox"></div><div class="terminal"></div><span class="prompt">felixguo@walter $ </span><span class="before"></span><span class="cursor blink">&nbsp;</span><span class="after"></span>';
+var defaultTerminal = '<div class="hidden"><input type="text" class="textbox"></div><div class="terminal"></div><span class="prompt active"></span><span class="before"></span><span class="cursor blink">&nbsp;</span><span class="after"></span>';
+
+function createDefaultState() {
+    return { username: "Untitled", 
+             columns: [createColumn(100)],
+             wfs: createWelcomeDirectory(),
+             wsh: { 
+                 env: [], // environmental variables
+                 alias: [],// alias mappings
+             }};
+}
+
+function createWindow(h) {
+    return { height: h, 
+             terminal: createTerminal() };
+}
+
+function createTerminal() {
+    return { prompt: "felixguo@walter %w $ ", 
+             output: "WatTerm 1.0\n", 
+             in_prog: false, 
+             history: "", 
+             workingDirectory: "~" };
+}
+
+function createWelcomeDirectory() {
+    var dir = createDirectory("~");
+    dir.data.push({ type: FILE_TYPE,
+             name: "Welcome",
+             data: "Welcome to WatTerm! Here is some information about some stuff!\n" });
+    return dir;
+}
+
+function createColumn(w) {
+    return { width: w, windows: [createWindow(100)] };
+}
+
+function createDirectory(n) {
+    return { type: DIR_TYPE,
+             name: n,
+             data: [] };
+}
+
+function require(script) {
+    $.ajax({
+        url: script,
+        dataType: "script",
+        async: false,           // <-- This is the key
+        success: function () {
+            // all good...
+        },
+        error: function () {
+            throw new Error("Could not load script " + script);
+        }
+    });
+}
 
 $(document).ready(function() {
     windowWidth = window.innerWidth;
@@ -28,16 +86,15 @@ $(document).ready(function() {
         console.log(items);
         state = items[STATE_KEY];
         rebuildWindows();
+        selectWindow(selectedWindow);
     });
     document.addEventListener('keydown', globalOnKeyDown, false);
-    selectWindow(selectedWindow);
 });
 
 function globalOnKeyDown(e) {
     var changed = true;
     if (event.shiftKey && e.keyCode == KEY_LEFT_ARROW) {
         var col = getCol(selectedWindow);
-        console.log(col);
         if (col != 0) {
             state.columns[col - 1].width--;
             state.columns[col].width++;
@@ -139,6 +196,12 @@ function bindEvents() {
     });
 
     $(".textbox").keydown(function(e) {
+        if (e.keyCode == KEY_ENTER && $(this).val()) {
+            processTerminalCommand($(this).val());
+            $(this).val("");
+            var window = $("#" + selectedWindow).find(".window");
+            window.animate({ scrollTop: window.prop("scrollHeight") - window.height() }, 500);
+        }
         updateTextbox(this);
     });
     $(".textbox").keyup(function(e) {
@@ -149,7 +212,6 @@ function bindEvents() {
 function updateTextbox(sender) {
     var cursorPos = $(sender)[0].selectionStart;
     var string = $(sender).val();
-    console.log(cursorPos);
     $(sender).parent().parent().find(".before").text(string.substring(0, cursorPos));
     
     if (cursorPos < string.length) {
@@ -164,24 +226,11 @@ function updateTextbox(sender) {
     }
 }
 function getCurrentTerminal() {
-    return state.columns[getCol(selectedWindow)].windows[getRow(selectedWindow)].terminal;
+    return getTerminalFromId(selectedWindow);
 }
 
-function createDefaultState() {
-    return { username: "Untitled", 
-             columns: [createColumn(100)] };
-}
-
-function createWindow(h) {
-    return { height: h, terminal: createTerminal() };
-}
-
-function createTerminal() {
-    return { prompt: "", output: "WatTerm 1.0\n", in_prog: false, history: "" };
-}
-
-function createColumn(w) {
-    return { width: w, windows: [createWindow(100)] };
+function getTerminalFromId(id) {
+    return state.columns[getCol(id)].windows[getRow(id)].terminal;
 }
 
 function updateState() {
@@ -207,8 +256,172 @@ function rebuildWindows() {
     $("body").html(content);
     bindEvents();
     $("#" + selectedWindow).children(".window").addClass("selected");
+    updateTerminals();
 }
 
-function updateTerminal() {
+function updateTerminals() {
+    $(".windowWrapper").each(function(i, e) {
+        
+        var id = $(e).attr("id");
+        
+        $(e).find(".terminal").html(getTerminalFromId(id).output);
+        $(e).find(".prompt.active").text(makePrompt(getTerminalFromId(id)));
+    });
+}
+
+function makePrompt(terminal) {
+    var prompt = terminal.prompt;
+    prompt = prompt.replace("%w", terminal.workingDirectory);
+    return prompt;
+}
+
+function directoryExist(directory) {
+    if (getDirectory(directory) == false) {
+        return false;
+    }
+    else {
+        return true;
+    }
+}
+
+function getFile(path) {
+    var end = path.lastIndexOf("/");
+    var parts = path.split("/");
+    var filename = parts[parts.length - 1];
+    if (end == -1) return false;
+    var containingDirRes = getDirectory(path.substring(0, end));
+    if (containingDirRes == false) return false;
+    var containingPath = containingDirRes[1];
+    var containingDir = containingDirRes[0]; 
+    for (var j = 0; j < containingDir.data.length; j++) {
+        if (containingDir.data[j].type == FILE_TYPE &&
+            containingDir.data[j].name == filename) {
+            return [containingDir.data[j], containingPath + "/" + filename];
+        }
+    }
+    return false;
+}
+
+function getDirectory(directory) {
+    var parts = directory.split("/");
+    var dirStack = [];
+    var curDir = state.wfs;
+    dirStack.push(curDir);
+    for (var i = 1; i < parts.length; i++) {
+        if (parts == "" || parts == ".") continue;
+        if (parts[i] == "..") {
+            curDir = dirStack[dirStack.length - 1];
+            dirStack.pop();
+            continue;
+        }
+        var found = -1;
+        for (var j = 0; j < curDir.data.length; j++) {
+            // Found it
+            if (curDir.data[j].name == parts[i] && curDir.data[j].type == DIR_TYPE) {
+                found = j;
+                break;
+            }
+        }
+        if (found != -1) {
+            dirStack.push(curDir.data[j])
+        }
+        else {
+            return false;
+        }
+        curDir = dirStack[dirStack.length - 1];
+    }
+    var path = "";
+    for (var i = 0; i < dirStack.length; i++) {
+        if (i != 0) path += "/";
+        path += dirStack[i].name;
+    }
+    return [curDir, path];
+}
+
+function errorString(command, message) {
+    return "<p>wsh: " + command + ": " + message + "</p>";
+}
+
+function processTerminalCommand(command) {
+    // In case user changes during run
+    getCurrentTerminal().output += '<p><span class="prompt">' + makePrompt(getCurrentTerminal()) + '</span> ' + command + "</p>";
+    var workingDirectoryPath = getCurrentTerminal().workingDirectory;
+    var workingDirectory = getDirectory(workingDirectoryPath)[0];
+    console.log(workingDirectory);
+    if (workingDirectory == false) {
+        getCurrentTerminal().output += errorString("proc", "Working directory not found. Resetting.");
+        getCurrentTerminal().workingDirectory = "~";
+        updateTerminals();
+        return;
+    }
+    var runInWindow = selectedWindow;
+    var parts = command.split(" ");
+    switch (parts[0]) {
+        // Built in System Commands
+        case "cd": 
+            if (!parts[1]) {
+                getCurrentTerminal().output += errorString(parts[0], "No directory provided");
+            }
+            else {
+                var navResult = getDirectory(workingDirectoryPath + "/" + parts[1]);
+                console.log("NavResult");
+                console.log(navResult);
+                if (navResult) {
+                    getCurrentTerminal().workingDirectory = navResult[1];
+                }
+                else {
+                    getCurrentTerminal().output += errorString(parts[0], parts[1] + ": No such directory");
+                }
+            }
+            break;
+        case "mkdir": 
+            if (!parts[1]) {
+                getCurrentTerminal().output += errorString(parts[0], "No directory provided");
+            }
+            else {
+                if (directoryExist(workingDirectoryPath + "/" + parts[1])) {
+                    getCurrentTerminal().output += errorString(parts[0], parts[1] + ": Directory already exists");
+                }
+                else {
+                    workingDirectory.data.push(createDirectory(parts[1]));
+                }
+            }
+            break;
+        case "ls":
+            var lsOutput = "<p>";
+            if (workingDirectory.data.length == 0) {
+                lsOutput += "Directory is empty";
+            } 
+            else {
+                lsOutput += "Directory listing for " + workingDirectoryPath + "<br>";
+            }
+            for (var i = 0; i < workingDirectory.data.length; i++) {
+                var prefix = "FILE    ";
+                if (workingDirectory.data[i].type == DIR_TYPE) {
+                    prefix = "DIR     ";
+                }
+                lsOutput += "<p>" + prefix + " " + workingDirectory.data[i].name + "</p>";
+            }
+            getCurrentTerminal().output += lsOutput + "</p>";
+            break;
+        case "cat":
+            if (!parts[1]) {
+                getCurrentTerminal().output += errorString(parts[0], "No file provided");
+            }
+            else {
+                var navResult = getFile(workingDirectoryPath + "/" + parts[1]);
+                if (navResult == false) {
+                    getCurrentTerminal().output += errorString(parts[0], "File not found");
+                }
+                else {
+                    getCurrentTerminal().output += "<p>" + navResult[0].data + "</p>";
+                }
+            }
+            break;
+        default:
+            getCurrentTerminal().output += errorString(command, "command not found");
+            break;
+    }
     
+    updateTerminals();
 }
