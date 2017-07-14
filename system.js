@@ -12,6 +12,7 @@ var KEY_ENTER = 13;
 var DIR_TYPE = "dir";
 var FILE_TYPE = "file";
 var DELIMITER = "-";
+var KEY_C = 67;
 
 var windowWidth;
 var windowHeight;
@@ -19,7 +20,12 @@ var selectedWindow = "0" + DELIMITER + "0";
 
 var defaultWindow = '<div class="windowWrapper" style="height: $(SIZE)" id="$(FULLID)" tabindex="1"><div class="window" id="$(ID)">$(TERM)</div></div>';
 var defaultColumn = '<div class="column" id="$(ID)" style="width: $(SIZE)">$(CONTENT)</div>';
-var defaultTerminal = '<div class="hidden"><input type="text" class="textbox"></div><div class="terminal"></div><span class="prompt active"></span><span class="before"></span><span class="cursor blink">&nbsp;</span><span class="after"></span>';
+var defaultTerminal = 
+    '<iframe class="terminalScriptUI" style="display:none"></iframe><div class="terminalWrapper">\
+        <div class="hidden"><input type="text" class="textbox"></div>\
+        <div class="terminal"></div>\
+        <span class="prompt active"></span><span class="before"></span><span class="cursor blink">&nbsp;</span><span class="after"></span>\
+    </div>';
 
 function createDefaultState() {
     return { username: "Untitled", 
@@ -27,8 +33,12 @@ function createDefaultState() {
              wfs: createWelcomeDirectory(),
              wsh: { 
                  env: [], // environmental variables
-                 alias: [],// alias mappings
+                 aliases: [],// alias mappings
              }};
+}
+
+function createAlias(alias, command) {
+    return { alias: alias, command: command };
 }
 
 function createWindow(h) {
@@ -39,7 +49,7 @@ function createWindow(h) {
 function createTerminal() {
     return { prompt: "felixguo@walter %w $ ", 
              output: "WatTerm 1.0\n", 
-             in_prog: false, 
+             inProg: false, 
              history: "", 
              workingDirectory: "~" };
 }
@@ -49,6 +59,13 @@ function createWelcomeDirectory() {
     dir.data.push({ type: FILE_TYPE,
              name: "Welcome",
              data: "Welcome to WatTerm! Here is some information about some stuff!\n" });
+    dir.data.push({ type: DIR_TYPE,
+             name: "scripts",
+             data: [
+                { type: FILE_TYPE,
+                  name: "test",
+                  data: "<b>Hello</b> <i>World</i> <script>system.done()</script>" }
+             ] });
     return dir;
 }
 
@@ -81,12 +98,14 @@ $(document).ready(function() {
     windowHeight = window.innerHeight;
     var defaultStateObject = {};
     defaultStateObject[STATE_KEY] = createDefaultState();
+    console.log(chrome.storage.local);
     chrome.storage.local.get(defaultStateObject, 
     function(items) {
         console.log(items);
         state = items[STATE_KEY];
         rebuildWindows();
         selectWindow(selectedWindow);
+        resetTerminals();
     });
     document.addEventListener('keydown', globalOnKeyDown, false);
 });
@@ -190,19 +209,38 @@ function selectWindow(newID) {
     $("#" + selectedWindow).find(".textbox").focus();
     setTimeout(function () { $("#" + selectedWindow).find(".textbox").focus(); }, 1);
 }
+
+function resetTerminals() {
+    $(".windowWrapper").each(function(index, e) {
+       var id = $(e).attr("id");
+       getTerminalFromId(id).inProg = false;
+    });
+    updateTerminals();
+}
+
 function bindEvents() {
     $(".windowWrapper").click(function() {
        selectWindow($(this).attr("id"));
     });
 
     $(".textbox").keydown(function(e) {
-        if (e.keyCode == KEY_ENTER && $(this).val()) {
-            processTerminalCommand($(this).val());
-            $(this).val("");
-            var window = $("#" + selectedWindow).find(".window");
-            window.animate({ scrollTop: window.prop("scrollHeight") - window.height() }, 500);
+        if (!getCurrentTerminal().inProg) {
+            if (e.keyCode == KEY_ENTER && $(this).val()) {
+                if (!getCurrentTerminal().inProg) {
+                    processTerminalCommand($(this).val());
+                    $(this).val("");
+                    var window = $("#" + selectedWindow).find(".window");
+                    window.animate({ scrollTop: window.prop("scrollHeight") - window.height() }, 500);
+                }
+                else {
+                    getCurrentTerminal().inputBuf += "\n";
+                }
+            }
+            updateTextbox(this);
         }
-        updateTextbox(this);
+        else {
+            return false;
+        }
     });
     $(".textbox").keyup(function(e) {
         updateTextbox(this);
@@ -233,8 +271,10 @@ function getTerminalFromId(id) {
     return state.columns[getCol(id)].windows[getRow(id)].terminal;
 }
 
-function updateState() {
-    chrome.storage.local.set({ STATE_KEY: state });
+function saveState() {
+    var savedObject = {};
+    savedObject[STATE_KEY] = state;
+    chrome.storage.local.set(savedObject);
 }
 
 function rebuildWindows() {
@@ -266,7 +306,15 @@ function updateTerminals() {
         
         $(e).find(".terminal").html(getTerminalFromId(id).output);
         $(e).find(".prompt.active").text(makePrompt(getTerminalFromId(id)));
+        if (getTerminalFromId(id).inProg) {
+            $(e).find(".prompt.active").hide();
+        }
+        else {
+            $(e).find(".prompt.active").show();
+        }
     });
+
+    saveState();
 }
 
 function makePrompt(terminal) {
@@ -342,20 +390,36 @@ function errorString(command, message) {
     return "<p>wsh: " + command + ": " + message + "</p>";
 }
 
+function getAlias(alias) {
+    for (var i = 0; i < state.wsh.aliases.length; i++) {
+        console.log(state.wsh.aliases[i].alias + "," + alias + ", " + (alias == state.wsh.aliases[i].alias));
+        if (alias == state.wsh.aliases[i].alias) {
+            return state.wsh.aliases[i];
+        }
+    }
+    return false;
+}
+
 function processTerminalCommand(command) {
     // In case user changes during run
     getCurrentTerminal().output += '<p><span class="prompt">' + makePrompt(getCurrentTerminal()) + '</span> ' + command + "</p>";
     var workingDirectoryPath = getCurrentTerminal().workingDirectory;
     var workingDirectory = getDirectory(workingDirectoryPath)[0];
-    console.log(workingDirectory);
     if (workingDirectory == false) {
         getCurrentTerminal().output += errorString("proc", "Working directory not found. Resetting.");
         getCurrentTerminal().workingDirectory = "~";
         updateTerminals();
         return;
     }
+    var parts = splitSpace(command);
+    if (parts[0] != "unbind" && parts[0] != "bind") {
+        // These dont get alias replacement
+        for (var i = 0; i < state.wsh.aliases.length; i++) {
+            command = command.replace(state.wsh.aliases[i].alias, state.wsh.aliases[i].command);
+        }
+    }
     var runInWindow = selectedWindow;
-    var parts = command.split(" ");
+    console.log(parts);
     switch (parts[0]) {
         // Built in System Commands
         case "cd": 
@@ -364,8 +428,6 @@ function processTerminalCommand(command) {
             }
             else {
                 var navResult = getDirectory(workingDirectoryPath + "/" + parts[1]);
-                console.log("NavResult");
-                console.log(navResult);
                 if (navResult) {
                     getCurrentTerminal().workingDirectory = navResult[1];
                 }
@@ -418,10 +480,132 @@ function processTerminalCommand(command) {
                 }
             }
             break;
+        case "aliases":
+            getCurrentTerminal().output += "<p>Bound aliases: </p>";
+            for (var i = 0; i < state.wsh.aliases.length; i++) {
+                getCurrentTerminal().output += "<p>" + state.wsh.aliases[i].alias + " -> " + state.wsh.aliases[i].command + "</p>";
+            }
+            break;
+        case "bind":
+            if (parts.length < 3) {
+                getCurrentTerminal().output += errorString(parts[0], "Need at least two parameters");
+            }
+            else {
+                var result = getAlias(parts[1]);
+                var command = parts.slice(2, parts.length).join(" ");
+                if (result) {
+                    getCurrentTerminal().output += errorString(parts[0], "Previous alias already exists, will be overwritten! <br>Previous Alias is " + result.command);
+                    result.command = command;
+                }   
+                else {
+                    state.wsh.aliases.push(createAlias(parts[1], command));
+                }
+            }
+            break;
+        case "unbind":
+            if (!parts[1]) {
+                getCurrentTerminal().output += errorString(parts[0], "Need an alias to unbind");
+            }
+            else {
+                var result = getAlias(parts[1]);
+                if (result == false) {
+                    getCurrentTerminal().output += errorString(parts[0], "Alias not found");
+                }   
+                else {
+                    state.wsh.aliases.splice(state.wsh.aliases.indexOf(result), 1);
+                }
+            }
+            break;
+        case "clear":
+            getCurrentTerminal().output = "";
+            break;
+        case "script":
+            if (!parts[1]) {
+                var navResult = getDirectory("~/scripts");
+                if (navResult == false || navResult[0].data.length == 0) {
+                    getCurrentTerminal().output += "No Scripts Installed";
+                }
+                else {
+                    var first = true;
+                    getCurrentTerminal().output += "<p>Available Scripts: <br>";
+                    for (var i = 0; i < navResult[0].data.length; i++) {
+                        if (navResult[0].data[i].type == FILE_TYPE) {
+                            if (!first) {
+                                getCurrentTerminal().output = "<br>";
+                            }
+                            else {
+                                first = false;
+                            }
+                            getCurrentTerminal().output += navResult[0].data[i].name;
+                        }
+                    }
+                    getCurrentTerminal().output += "</p>";
+                }
+            }
+            else {
+                var navResult = getFile("~/scripts/" + parts[1]);
+                if (navResult == false) {
+                    getCurrentTerminal().output += errorString(parts[0], "Script not found");
+                }
+                else {
+                    // Execute Script here!
+                    setTimeout(function() {
+                        evaluateScript(navResult[0].data, state.wfs, parts.slice(2, parts.length), getCurrentTerminal(), $("#" + selectedWindow).find(".terminalScriptUI")[0]);
+                    },0);
+                }
+            }
+            break;
+        case "reset":
+            state = createDefaultState();
+            rebuildWindows();
+            break;
         default:
             getCurrentTerminal().output += errorString(command, "command not found");
             break;
     }
     
     updateTerminals();
+}
+
+function splitSpace(string) {
+    var parts = string.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g);
+    for (var i = 0; i < parts.length; i++) {
+        parts[i] = parts[i].replace(/"/g, "");
+        parts[i] = parts[i].replace(/'/g, "");
+    }
+    return parts;
+}
+
+// Forks the Process over to an external script.
+// script:      script to be evaled
+// wfs:         reference to the filesystem
+// params:      list of parameters passed into script
+// terminal:    reference to the terminal
+var lastFrame;
+function evaluateScript(script, wfs, params, terminal, frame) {
+    // Functions accessible by script
+    terminal.inProg = true;
+    $(frame).show();
+    $(frame).siblings(".terminalWrapper").hide();
+    $(frame)[0].contentDocument.write("");
+    $(frame)[0].contentDocument.write(script);
+    lastFrame = frame;
+}
+
+function getSystem() {
+    var frame = lastFrame;
+    return { 
+        // Print to Terminal
+        out: function(message) {
+            getCurrentTerminal().output += "<p>" + message + "</p>";
+            console.log("Output " + message);
+            updateTerminals();
+        },
+        done: function() {
+            $(frame).hide();
+            $(frame).siblings(".terminalWrapper").show();
+            terminal.inProg = false;
+            updateTerminals();
+        }
+    }
 }
