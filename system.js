@@ -18,10 +18,10 @@ var windowWidth;
 var windowHeight;
 var selectedWindow = "0" + DELIMITER + "0";
 
-var defaultWindow = '<div class="windowWrapper" style="height: $(SIZE)" id="$(FULLID)" tabindex="1"><div class="window" id="$(ID)">$(TERM)</div></div>';
+var defaultWindow = '<div class="windowWrapper" style="height: $(SIZE)" id="$(FULLID)" tabindex="1"><iframe class="terminalScriptUI" style="display:none"></iframe><div class="window" id="$(ID)">$(TERM)</div></div>';
 var defaultColumn = '<div class="column" id="$(ID)" style="width: $(SIZE)">$(CONTENT)</div>';
 var defaultTerminal = 
-    '<iframe class="terminalScriptUI" style="display:none"></iframe><div class="terminalWrapper">\
+    '<div class="terminalWrapper">\
         <div class="hidden"><input type="text" class="textbox"></div>\
         <div class="terminal"></div>\
         <span class="prompt active"></span><span class="before"></span><span class="cursor blink">&nbsp;</span><span class="after"></span>\
@@ -61,11 +61,11 @@ function createWelcomeDirectory() {
              data: "Welcome to WatTerm! Here is some information about some stuff!\n" });
     dir.data.push({ type: DIR_TYPE,
              name: "scripts",
-             data: [
-                { type: FILE_TYPE,
-                  name: "test",
-                  data: "<b>Hello</b> <i>World</i> <script>system.done()</script>" }
-             ] });
+             data: [{ type: FILE_TYPE,
+             name: "hello-world",
+             data: "http://felixguo.me/wat-term-scripts/test.html" }, { type: FILE_TYPE,
+             name: "clock",
+             data: "http://felixguo.me/wat-term-scripts/clock/index.html" }] });
     return dir;
 }
 
@@ -417,6 +417,7 @@ function processTerminalCommand(command) {
         for (var i = 0; i < state.wsh.aliases.length; i++) {
             command = command.replace(state.wsh.aliases[i].alias, state.wsh.aliases[i].command);
         }
+        parts = splitSpace(command);
     }
     var runInWindow = selectedWindow;
     console.log(parts);
@@ -586,26 +587,22 @@ function evaluateScript(script, wfs, params, terminal, frame) {
     // Functions accessible by script
     terminal.inProg = true;
     $(frame).show();
-    $(frame).siblings(".terminalWrapper").hide();
-    $(frame)[0].contentDocument.write("");
-    $(frame)[0].contentDocument.write(script);
-    lastFrame = frame;
+    $("#" + selectedWindow).find(".window").hide();
+    var cacheParamValue = (new Date()).getTime();
+    script = script + "?cache=" + cacheParamValue;
+    $(frame).attr("src", script);
+    lastFrame = selectedWindow;
 }
 
-function getSystem() {
-    var frame = lastFrame;
-    return { 
-        // Print to Terminal
-        out: function(message) {
-            getCurrentTerminal().output += "<p>" + message + "</p>";
-            console.log("Output " + message);
-            updateTerminals();
-        },
-        done: function() {
-            $(frame).hide();
-            $(frame).siblings(".terminalWrapper").show();
-            terminal.inProg = false;
-            updateTerminals();
-        }
+function receiveMessage(event) {
+    if (event.data == "RequestID") {
+        event.source.postMessage(lastFrame, event.origin);
+    }
+    else if (event.data[0] == "F") {
+        var id = event.data.substring(1);
+        $("#" + id).find(".terminalScriptUI").hide();
+        $("#" + id).find(".window").show();
+        getTerminalFromId(id).inProg = false;
     }
 }
+window.addEventListener("message", receiveMessage, false);
