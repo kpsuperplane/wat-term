@@ -8,8 +8,7 @@
     "newtab": "index.html"
   },
   "permissions": [
-          "storage"
-        ],
+          "storage", "<all_urls>"],
   "content_scripts": [{
     "matches": [ "<all_urls>" ],
     "js": [ "system.js" ],
