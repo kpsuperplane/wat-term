@@ -59,7 +59,8 @@ function createTerminal() {
     return { prompt: "felixguo@walter %w $ ", 
              output: "WatTerm 1.0\n", 
              inProg: false, 
-             history: "", 
+             history: [""],
+             historyIndex: 0,
              runningCommand: "",
              workingDirectory: "~" };
 }
@@ -239,13 +240,26 @@ function bindEvents() {
     });
     $(".textbox").keydown(function(e) {
         if (!getCurrentTerminal().inProg) {
+            var block = true;
             if (e.keyCode == KEY_ENTER && $(this).val()) {
                 processTerminalCommand($(this).val(), true);
                 $(this).val("");
                 var window = $("#" + selectedWindow).find(".window");
                 window.animate({ scrollTop: window.prop("scrollHeight") - window.height() }, 500);
             }
+            else if (e.keyCode == KEY_DOWN_ARROW && getCurrentTerminal().historyIndex != getCurrentTerminal().history.length - 1) {
+                getCurrentTerminal().historyIndex++;
+                $(this).val(getCurrentTerminal().history[getCurrentTerminal().historyIndex]);
+            }
+            else if (e.keyCode == KEY_UP_ARROW && getCurrentTerminal().historyIndex != 0) {
+                getCurrentTerminal().historyIndex--;
+                $(this).val(getCurrentTerminal().history[getCurrentTerminal().historyIndex]);
+            }
+            else {
+                block = false;
+            } 
             updateTextbox(this);
+            return !block;
         }
         else {
             return false;
@@ -274,6 +288,7 @@ function updateTextbox(sender) {
         
         $(sender).parent().parent().find(".after").html("");
     }
+    getCurrentTerminal().history[getCurrentTerminal().historyIndex] = string;
 }
 function getCurrentTerminal() {
     return getTerminalFromId(selectedWindow);
@@ -434,6 +449,8 @@ function getAlias(alias) {
 function processTerminalCommand(command, logInTerminal) {
     // In case user changes during run
     if (logInTerminal) {
+        getCurrentTerminal().historyIndex++;
+        getCurrentTerminal().history.push("");
         getCurrentTerminal().output += '<p><span class="prompt">' + makePrompt(getCurrentTerminal()) + '</span> ' + command + "</p>";
     }
     var workingDirectoryPath = getCurrentTerminal().workingDirectory;
@@ -571,6 +588,8 @@ function processTerminalCommand(command, logInTerminal) {
             break;
         case "clear":
             getCurrentTerminal().output = "";
+            getCurrentTerminal().history = [""];
+            getCurrentTerminal().historyIndex = 0;
             break;
         case "script":
             if (!parts[1]) {
