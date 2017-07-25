@@ -613,8 +613,22 @@ function processTerminalCommand(command, logInTerminal) {
             state = createDefaultState();
             buildWindows();
             break;
-        case "edit":
-            console.log(parts);
+        case "kill":
+            if (parts.length != 2) {
+                 getCurrentTerminal().output += errorString(parts[0], "No parameters provided");
+            }
+            else {
+                var terminal = getTerminalFromId(parts[1]);
+                if (terminal != null) {
+                    getCurrentTerminal().output += "<p>Killed terminal</p>";
+                    killTerminal(parts[1]);
+                }
+                else {
+                    getCurrentTerminal().output += errorString(parts[0], "Invalid id");
+                }
+            }
+            break;
+        case "edit":            
             if (parts.length != 2) {
                  getCurrentTerminal().output += errorString(parts[0], "No file provided");
             }
@@ -677,14 +691,17 @@ function receiveMessage(event) {
     var parts = event.data.split(" ");
     if (parts[0] == "done") {
         var id = parts[1];
-        $("#" + id).find(".terminalScriptUI").hide();
-        $("#" + id).find(".window").show();
-        getTerminalFromId(id).inProg = false;
-        selectedWindow = id;
-        updateTerminals();
+        killTerminal(id);
     }
 }
 
+function killTerminal(id) {
+    $("#" + id).find(".terminalScriptUI").hide();
+    $("#" + id).find(".window").show();
+    getTerminalFromId(id).inProg = false;
+    selectedWindow = id;
+    updateTerminals();
+}
 function getEnv(key) {
     for (var i = 0; i < state.wsh.env.length; i++) {
         if (state.wsh.env[i].key == key) {
