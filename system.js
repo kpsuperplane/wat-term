@@ -16,7 +16,8 @@ var KEY_C = 67;
 
 var windowWidth;
 var windowHeight;
-var selectedWindow = "0" + DELIMITER + "0";
+var defaultSelectedWindow = "0" + DELIMITER + "0";
+var selectedWindow = defaultSelectedWindow;
 
 var defaultWindow = 
 '<div class="windowWrapper" style="height: $(SIZE)" id="$(FULLID)" tabindex="1">\
@@ -63,6 +64,12 @@ function createTerminal() {
              workingDirectory: "~" };
 }
 
+function createFile(name) {
+    return { type: FILE_TYPE,
+             name: name,
+             data: "" };
+}
+
 function createWelcomeDirectory() {
     var dir = createDirectory("~");
     dir.data.push({ type: FILE_TYPE,
@@ -86,20 +93,6 @@ function createDirectory(n) {
              data: [] };
 }
 
-function require(script) {
-    $.ajax({
-        url: script,
-        dataType: "script",
-        async: false,           // <-- This is the key
-        success: function () {
-            // all good...
-        },
-        error: function () {
-            throw new Error("Could not load script " + script);
-        }
-    });
-}
-
 $(document).ready(function() {
     windowWidth = window.innerWidth;
     windowHeight = window.innerHeight;
@@ -112,7 +105,6 @@ $(document).ready(function() {
         state = items[STATE_KEY];
         buildWindows();
         selectWindow(selectedWindow);
-        restoreTerminalStates();
     });
     document.addEventListener('keydown', globalOnKeyDown, false);
 });
@@ -120,8 +112,9 @@ $(document).ready(function() {
 function globalOnKeyDown(e) {
     var changed = false;
     var updated = false;
+    var row = getRow(selectedWindow);
+    var col = getCol(selectedWindow);
     if (event.shiftKey && e.keyCode == KEY_LEFT_ARROW) {
-        var col = getCol(selectedWindow);
         if (col != 0) {
             state.columns[col - 1].width--;
             state.columns[col].width++;
@@ -133,7 +126,6 @@ function globalOnKeyDown(e) {
         updated = true;
     }
     else if (event.shiftKey && e.keyCode == KEY_RIGHT_ARROW) {
-        var col = getCol(selectedWindow);
         if (col != state.columns.length - 1) {
             state.columns[col + 1].width--;
             state.columns[col].width++;
@@ -145,8 +137,6 @@ function globalOnKeyDown(e) {
         updated = true;
     }
     else if (event.shiftKey && e.keyCode == KEY_UP_ARROW) {
-        var row = getRow(selectedWindow);
-        var col = getCol(selectedWindow);
         if (row != 0) {
             state.columns[col].windows[row - 1].height--;
             state.columns[col].windows[row].height++;
@@ -171,42 +161,31 @@ function globalOnKeyDown(e) {
         updated = true;
     }
     else if (event.ctrlKey  && event.shiftKey && e.keyCode == KEY_I) {
-        var row = getRow(selectedWindow);
-        var col = getCol(selectedWindow);
         var collapse = state.columns[col].windows[row].height / 2;
         state.columns[col].windows[row].height = collapse;
         state.columns[col].windows.splice(row, 0, createWindow(collapse));
         changed = true;
     }
     else if (event.ctrlKey  && event.shiftKey && e.keyCode == KEY_K) {
-        var row = getRow(selectedWindow);
-        var col = getCol(selectedWindow);
         var collapse = state.columns[col].windows[row].height / 2;
         state.columns[col].windows[row].height = collapse;
         state.columns[col].windows.splice(row + 1, 0, createWindow(collapse));
         changed = true;
     }
     else if (event.ctrlKey  && event.shiftKey && e.keyCode == KEY_J) {
-        var row = getRow(selectedWindow);
-        var col = getCol(selectedWindow);
         var collapse = state.columns[col].width / 2;
         state.columns[col].width = collapse;
         state.columns.splice(col, 0, createColumn(collapse));
         changed = true;
     }
     else if (event.ctrlKey  && event.shiftKey && e.keyCode == KEY_L) {
-        var row = getRow(selectedWindow);
-        var col = getCol(selectedWindow);
         var collapse = state.columns[col].width / 2;
         state.columns[col].width = collapse;
         state.columns.splice(col + 1, 0, createColumn(collapse));
         changed = true;
     }
-    if (changed) {
+    if (changed || updated) {
         buildWindows();
-    }
-    if (updated) {
-        updateWindows();
     }
 }
 
@@ -223,10 +202,11 @@ function restoreTerminalStates() {
         for (var j = 0; j < state.columns[i].windows.length; j++) { 
             if (state.columns[i].windows[j].terminal.inProg) {
                 selectedWindow = i + DELIMITER + j;
-                processTerminalCommand(state.columns[i].windows[j].terminal.runningCommand);
+                processTerminalCommand(state.columns[i].windows[j].terminal.runningCommand, false);
             }
         }
     }
+    selectedWindow = defaultSelectedWindow;
 }
 
 function selectWindow(newID) {
@@ -246,14 +226,21 @@ function resetTerminals() {
 }
 
 function bindEvents() {
-    $(".windowWrapper").click(function() {
-       selectWindow($(this).attr("id"));
-    });
+    $(".windowWrapper").on('mousedown', function(e) {
+        $(this).data('p0', { x: e.pageX, y: e.pageY });
+    }).on('mouseup', function(e) {
+        var p0 = $(this).data('p0'),
+            p1 = { x: e.pageX, y: e.pageY },
+            d = Math.sqrt(Math.pow(p1.x - p0.x, 2) + Math.pow(p1.y - p0.y, 2));
 
+        if (d < 4) {
+            selectWindow($(this).attr("id"));
+        }
+    });
     $(".textbox").keydown(function(e) {
         if (!getCurrentTerminal().inProg) {
             if (e.keyCode == KEY_ENTER && $(this).val()) {
-                processTerminalCommand($(this).val());
+                processTerminalCommand($(this).val(), true);
                 $(this).val("");
                 var window = $("#" + selectedWindow).find(".window");
                 window.animate({ scrollTop: window.prop("scrollHeight") - window.height() }, 500);
@@ -264,6 +251,9 @@ function bindEvents() {
             return false;
         }
     });
+    $(".textbox").keypress(function(e) {
+        updateTextbox(this);
+    });
     $(".textbox").keyup(function(e) {
         updateTextbox(this);
     });
@@ -271,7 +261,7 @@ function bindEvents() {
 
 function updateTextbox(sender) {
     var cursorPos = $(sender)[0].selectionStart;
-    var string = $(sender).val();
+    var string = $(sender).val();    
     $(sender).parent().parent().find(".before").text(string.substring(0, cursorPos));
     
     if (cursorPos < string.length) {
@@ -299,7 +289,8 @@ function saveState() {
     chrome.storage.local.set(savedObject);
 }
 
-function updateWindows() {
+function buildWindows() {
+    defaultSelectedWindow = selectedWindow;
     var background = getEnv("background");
     var color = background;
     if (background == "") {
@@ -308,19 +299,8 @@ function updateWindows() {
     else if (background.startsWith("http") || background.startsWith("https")) {
         color = "url('" + background + "')";
     }
-    console.log(color);
     $("body").css("background", color);
     $("body").css("background-size", "cover");
-    for (var i = 0; i < state.columns.length; i++) {
-        $("#column" + i).width(state.columns[i].width + "%");
-        for (var j = 0; j < state.columns[i].windows.length; j++) {
-            $("#" + i + DELIMITER + j).height(state.columns[i].windows[j].height + "%");
-        }
-    }
-    updateTerminals();
-}
-
-function buildWindows() {
     var content = "";
     for (var i = 0; i < state.columns.length; i++) {
         var newCol = defaultColumn.replace("$(ID)", "column" + i);
@@ -339,7 +319,8 @@ function buildWindows() {
     $("body").html(content);
     bindEvents();
     $("#" + selectedWindow).children(".window").addClass("selected");
-    updateWindows();
+    restoreTerminalStates();
+    updateTerminals();
 }
 
 function updateTerminals() {
@@ -404,7 +385,9 @@ function getDirectory(directory) {
         if (parts == "" || parts == ".") continue;
         if (parts[i] == "..") {
             curDir = dirStack[dirStack.length - 1];
-            dirStack.pop();
+            if (dirStack.length != 1) {
+                dirStack.pop();
+            }
             continue;
         }
         var found = -1;
@@ -433,6 +416,9 @@ function getDirectory(directory) {
 
 function errorString(command, message) {
     return "<p>wsh: " + command + ": " + message + "</p>";
+    getCurrentTerminal().runningCommand = "";
+    getCurrentTerminal().inProg = false;
+    console.log(getCurrentTerminal());
 }
 
 function getAlias(alias) {
@@ -445,9 +431,11 @@ function getAlias(alias) {
     return false;
 }
 
-function processTerminalCommand(command) {
+function processTerminalCommand(command, logInTerminal) {
     // In case user changes during run
-    getCurrentTerminal().output += '<p><span class="prompt">' + makePrompt(getCurrentTerminal()) + '</span> ' + command + "</p>";
+    if (logInTerminal) {
+        getCurrentTerminal().output += '<p><span class="prompt">' + makePrompt(getCurrentTerminal()) + '</span> ' + command + "</p>";
+    }
     var workingDirectoryPath = getCurrentTerminal().workingDirectory;
     var workingDirectory = getDirectory(workingDirectoryPath)[0];
     if (workingDirectory == false) {
@@ -465,7 +453,8 @@ function processTerminalCommand(command) {
         parts = splitSpace(command);
     }
     var runInWindow = selectedWindow;
-    console.log(parts);
+    getCurrentTerminal().runningCommand = command;
+    getCurrentTerminal().inProg = false;
     switch (parts[0]) {
         // Built in System Commands
         case "env":
@@ -613,10 +602,10 @@ function processTerminalCommand(command) {
                 }
                 else {
                     // Execute Script here!
-                    setTimeout(function() {
-                        evaluateScript(navResult[0].data, state.wfs, parts.slice(2, parts.length), 
+                    
+                evaluateScript(navResult[0].data, state.wfs, parts.slice(2, parts.length), 
                         getCurrentTerminal(), $("#" + selectedWindow).find(".terminalScriptUI")[0]);
-                    },0);
+                    
                 }
             }
             break;
@@ -624,21 +613,47 @@ function processTerminalCommand(command) {
             state = createDefaultState();
             buildWindows();
             break;
+        case "edit":
+            console.log(parts);
+            if (parts.length != 2) {
+                 getCurrentTerminal().output += errorString(parts[0], "No file provided");
+            }
+            else {
+                var path = workingDirectoryPath + "/" + parts[1];
+                var navResult = getFile(path);
+                if (navResult == false) {
+                    // create file
+                    workingDirectory.data.push(createFile(parts[1]));
+                    console.log("madefile");
+                }
+                var result = window.prompt("Editing file: " + path, navResult == false ? "" : navResult[0].data);
+                console.log("promtped");
+                if (result != null) {
+                    navResult = getFile(workingDirectoryPath + "/" + parts[1]);
+                    navResult[0].data = result;
+                }
+            }
+            break;
+        case "":
+            break;
         default:
-            getCurrentTerminal().output += errorString(command, "command not found");
+            getCurrentTerminal().output += errorString(command, "command not found");            
             break;
     }
-    getCurrentTerminal().runningCommand = command;
+    
     updateTerminals();
 }
 
 function splitSpace(string) {
     var parts = string.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g);
-    for (var i = 0; i < parts.length; i++) {
-        parts[i] = parts[i].replace(/"/g, "");
-        parts[i] = parts[i].replace(/'/g, "");
+    if (parts != null) {
+        for (var i = 0; i < parts.length; i++) {
+            parts[i] = parts[i].replace(/"/g, "");
+            parts[i] = parts[i].replace(/'/g, "");
+        }
+        return parts;
     }
-    return parts;
+    return [""];
 }
 
 // Forks the Process over to an external script.
@@ -646,7 +661,6 @@ function splitSpace(string) {
 // wfs:         reference to the filesystem
 // params:      list of parameters passed into script
 // terminal:    reference to the terminal
-var lastFrame;
 function evaluateScript(script, wfs, params, terminal, frame) {
     // Functions accessible by script
     terminal.inProg = true;
@@ -654,21 +668,20 @@ function evaluateScript(script, wfs, params, terminal, frame) {
     $(frame).show();
     $("#" + selectedWindow).find(".window").hide();
     var cacheParamValue = (new Date()).getTime();
-    script = script + "?cache=" + cacheParamValue;
+    script = script + "?cache=" + cacheParamValue + "&id=" + selectedWindow;
     $(frame).attr("src", script);
-    lastFrame = selectedWindow;
+    updateTerminals();
 }
 
 function receiveMessage(event) {
     var parts = event.data.split(" ");
-    if (parts[0] == "requestid") {
-        event.source.postMessage("id " + lastFrame, event.origin);
-    }
-    else if (parts[0] == "done") {
-        var id = event.data.substring(1);
+    if (parts[0] == "done") {
+        var id = parts[1];
         $("#" + id).find(".terminalScriptUI").hide();
         $("#" + id).find(".window").show();
         getTerminalFromId(id).inProg = false;
+        selectedWindow = id;
+        updateTerminals();
     }
 }
 
