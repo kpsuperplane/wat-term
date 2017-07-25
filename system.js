@@ -13,6 +13,7 @@ var DIR_TYPE = "dir";
 var FILE_TYPE = "file";
 var DELIMITER = "-";
 var KEY_C = 67;
+var WAT_TERM_CONTENT_URL = "http://wat-ter.ml/";
 
 var windowWidth;
 var windowHeight;
@@ -449,8 +450,14 @@ function getAlias(alias) {
 function processTerminalCommand(command, logInTerminal) {
     // In case user changes during run
     if (logInTerminal) {
-        getCurrentTerminal().historyIndex++;
-        getCurrentTerminal().history.push("");
+        if (getCurrentTerminal().historyIndex == getCurrentTerminal().history.length - 1) {
+            getCurrentTerminal().historyIndex++;
+            getCurrentTerminal().history.push("");
+        }
+        else {
+            getCurrentTerminal().historyIndex = getCurrentTerminal().history.length;
+            getCurrentTerminal().history.push(command);
+        }
         getCurrentTerminal().output += '<p><span class="prompt">' + makePrompt(getCurrentTerminal()) + '</span> ' + command + "</p>";
     }
     var workingDirectoryPath = getCurrentTerminal().workingDirectory;
@@ -665,6 +672,23 @@ function processTerminalCommand(command, logInTerminal) {
                     navResult = getFile(workingDirectoryPath + "/" + parts[1]);
                     navResult[0].data = result;
                 }
+            }
+            break;
+        case "man":
+            if (parts.length != 2) {
+                 getCurrentTerminal().output += errorString(parts[0], "No command provided");
+            }
+            else {
+                var path = WAT_TERM_CONTENT_URL + parts[1] + "/man.html";
+                $.ajax({
+                    url: path,
+                    async: false,
+                    success: function(data) {
+                        getCurrentTerminal().output += data;
+                    }
+                }).fail(function() {
+                    getCurrentTerminal().output += errorString(parts[0], "Could not load man page for " + parts[1]);
+                });
             }
             break;
         case "":
