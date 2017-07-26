@@ -35,13 +35,14 @@ var defaultTerminal =
     </div>';
 
 function createDefaultState() {
-    return { username: "Untitled", 
-             columns: [createColumn(100)],
+    return { columns: [createColumn(100)],
              wfs: createWelcomeDirectory(),
              wsh: { 
                  env: [
                      {  key: "background", 
-                        value: "" }
+                        value: "" },
+                     {  key: "prompt", 
+                        value: "%w $ " }
                  ], // environmental variables
                  aliases: [],// alias mappings
              }};
@@ -52,13 +53,11 @@ function createAlias(alias, command) {
 }
 
 function createWindow(h) {
-    return { height: h, 
-             terminal: createTerminal() };
+    return { height: h, terminal: createTerminal() };
 }
 
 function createTerminal() {
-    return { prompt: "felixguo@walter %w $ ", 
-             output: "WatTerm 1.0\n", 
+    return { output: "WatTerm 1.0\n", 
              inProg: false, 
              history: [""],
              historyIndex: 0,
@@ -77,11 +76,6 @@ function createWelcomeDirectory() {
     dir.data.push({ type: FILE_TYPE,
              name: "Welcome",
              data: "Welcome to WatTerm! Here is some information about some stuff!\n" });
-    dir.data.push({ type: DIR_TYPE,
-             name: "scripts",
-             data: [{ type: FILE_TYPE,
-             name: "clock",
-             data: "http://wat-ter.ml/clock/" }] });
     return dir;
 }
 
@@ -360,7 +354,7 @@ function updateTerminals() {
 }
 
 function makePrompt(terminal) {
-    var prompt = terminal.prompt;
+    var prompt = getEnv("prompt");
     prompt = prompt.replace("%w", terminal.workingDirectory);
     return prompt;
 }
@@ -598,43 +592,6 @@ function processTerminalCommand(command, logInTerminal) {
             getCurrentTerminal().history = [""];
             getCurrentTerminal().historyIndex = 0;
             break;
-        case "script":
-            if (!parts[1]) {
-                var navResult = getDirectory("~/scripts");
-                if (navResult == false || navResult[0].data.length == 0) {
-                    getCurrentTerminal().output += "No Scripts Installed";
-                }
-                else {
-                    var first = true;
-                    getCurrentTerminal().output += "<p>Available Scripts: <br>";
-                    for (var i = 0; i < navResult[0].data.length; i++) {
-                        if (navResult[0].data[i].type == FILE_TYPE) {
-                            if (!first) {
-                                getCurrentTerminal().output = "<br>";
-                            }
-                            else {
-                                first = false;
-                            }
-                            getCurrentTerminal().output += navResult[0].data[i].name;
-                        }
-                    }
-                    getCurrentTerminal().output += "</p>";
-                }
-            }
-            else {
-                var navResult = getFile("~/scripts/" + parts[1]);
-                if (navResult == false) {
-                    getCurrentTerminal().output += errorString(parts[0], "Script not found");
-                }
-                else {
-                    // Execute Script here!
-                    
-                evaluateScript(navResult[0].data, state.wfs, parts.slice(2, parts.length), 
-                        getCurrentTerminal(), $("#" + selectedWindow).find(".terminalScriptUI")[0]);
-                    
-                }
-            }
-            break;
         case "reset":
             state = createDefaultState();
             buildWindows();
@@ -694,7 +651,19 @@ function processTerminalCommand(command, logInTerminal) {
         case "":
             break;
         default:
-            getCurrentTerminal().output += errorString(command, "command not found");            
+            // Attempt to look online for script
+            var path = WAT_TERM_CONTENT_URL + parts[0] + "/index.html";
+            $.ajax({
+                url: path,
+                async: false,
+                success: function(data) {
+                        evaluateScript(path, state.wfs, getCurrentTerminal(), 
+                        $("#" + selectedWindow).find(".terminalScriptUI")[0], 
+                        parts.slice(1, parts.length));
+                }
+            }).fail(function() {
+                getCurrentTerminal().output += errorString(command, "command not found");    
+            });
             break;
     }
     
@@ -718,23 +687,27 @@ function splitSpace(string) {
 // wfs:         reference to the filesystem
 // params:      list of parameters passed into script
 // terminal:    reference to the terminal
-function evaluateScript(script, wfs, params, terminal, frame) {
+function evaluateScript(script, wfs, terminal, frame, params) {
     // Functions accessible by script
     terminal.inProg = true;
 
     $(frame).show();
     $("#" + selectedWindow).find(".window").hide();
     var cacheParamValue = (new Date()).getTime();
-    script = script + "?cache=" + cacheParamValue + "&id=" + selectedWindow;
+    script = script + "?cache=" + cacheParamValue + "&id=" + selectedWindow + 
+        "&env=" + encodeURIComponent(JSON.stringify(state.wsh.env)) + "&params=" + params;
     $(frame).attr("src", script);
     updateTerminals();
 }
 
 function receiveMessage(event) {
-    var parts = event.data.split(" ");
+    var parts = event.data.split("|");
     if (parts[0] == "done") {
         var id = parts[1];
         killTerminal(id);
+    }
+    else if (parts[0] == "env") {
+        setEnv(parts[1], parts[2]);
     }
 }
 
@@ -758,10 +731,12 @@ function setEnv(key, value) {
     for (var i = 0; i < state.wsh.env.length; i++) {
         if (state.wsh.env[i].key == key) {
             state.wsh.env[i].value = value;
+            saveState();
             return;
         }
     }
     state.wsh.env.push({ key: key, value: value });
+    saveState();
 }
 
 window.addEventListener("message", receiveMessage, false);
