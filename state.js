@@ -1,6 +1,5 @@
 class State {
     constructor () {
-        this.username = "Untitled";
         this.columns = [new Column(100)];
         this.wfs = createWelcomeDirectory();
         this.wsh = {
@@ -9,6 +8,10 @@ class State {
                 {
                     key: "background",
                     value: ""
+                },
+                {
+                    key: "prompt",
+                    value: "%w $ "
                 }
             ],
             // alias mappings
@@ -21,7 +24,6 @@ class State {
     load (callback) {
         var defaultStateObject = {};
         defaultStateObject[STATE_KEY] = {
-            username: "Untitled",
             columns: [new Column(100)],
             wfs: createWelcomeDirectory(),
             wsh: {
@@ -29,6 +31,9 @@ class State {
                 env: [{
                     key: "background",
                     value: ""
+                },{
+                    key: "prompt",
+                    value: "%w $ "
                 }],
                 // alias mappings
                 aliases: [],
@@ -83,10 +88,12 @@ class State {
         for (var i = 0; i < this.wsh.env.length; i++) {
             if (this.wsh.env[i].key === key) {
                 this.wsh.env[i].value = value;
+                this.save();
                 return;
             }
         }
         this.wsh.env.push({ key: key, value: value });
+        this.save();
     }
 
     selectWindow(id) {
@@ -143,7 +150,6 @@ class Terminal {
         this.historyIndex = 0;
         this.inProg = false;
         this.output = "WatTerm 1.0\n";
-        this.prompt = "felixguo@walter %w $ ";
         this.runningCommand = "";
         this.workingDirectory = "~";
     }

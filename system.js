@@ -235,7 +235,7 @@ function updateTerminals() {
 }
 
 function makePrompt(terminal) {
-    var prompt = terminal.prompt;
+    var prompt = state.getEnv("prompt");
     prompt = prompt.replace("%w", terminal.workingDirectory);
     return prompt;
 }
@@ -472,43 +472,6 @@ function processTerminalCommand(command, logInTerminal) {
             getCurrentTerminal().history = [""];
             getCurrentTerminal().historyIndex = 0;
             break;
-        case "script":
-            if (!parts[1]) {
-                var navResult = getDirectory("~/scripts");
-                if (navResult === false || navResult[0].data.length === 0) {
-                    getCurrentTerminal().output += "No Scripts Installed";
-                }
-                else {
-                    var first = true;
-                    getCurrentTerminal().output += "<p>Available Scripts: <br>";
-                    for (var i = 0; i < navResult[0].data.length; i++) {
-                        if (navResult[0].data[i].type === FILE_TYPE) {
-                            if (!first) {
-                                getCurrentTerminal().output = "<br>";
-                            }
-                            else {
-                                first = false;
-                            }
-                            getCurrentTerminal().output += navResult[0].data[i].name;
-                        }
-                    }
-                    getCurrentTerminal().output += "</p>";
-                }
-            }
-            else {
-                var navResult = getFile("~/scripts/" + parts[1]);
-                if (navResult === false) {
-                    getCurrentTerminal().output += errorString(parts[0], "Script not found");
-                }
-                else {
-                    // Execute Script here!
-
-                evaluateScript(navResult[0].data, state.wfs, parts.slice(2, parts.length),
-                        getCurrentTerminal(), $("#" + state.selectedWindow).find(".terminalScriptUI")[0]);
-
-                }
-            }
-            break;
         case "reset":
             state = new State();
             buildWindows();
@@ -568,7 +531,19 @@ function processTerminalCommand(command, logInTerminal) {
         case "":
             break;
         default:
-            getCurrentTerminal().output += errorString(command, "command not found");
+            // Attempt to look online for script
+            var path = WAT_TERM_CONTENT_URL + parts[0] + "/index.html";
+            $.ajax({
+                url: path,
+                async: false,
+                success: function(data) {
+                    evaluateScript(path, state.wfs, getCurrentTerminal(),
+                    $("#" + state.selectedWindow).find(".terminalScriptUI")[0],
+                    parts.slice(1, parts.length));
+                }
+            }).fail(function() {
+                getCurrentTerminal().output += errorString(command, "command not found");
+            });
             break;
     }
 
@@ -599,7 +574,8 @@ function evaluateScript(script, wfs, params, terminal, frame) {
     $(frame).show();
     $("#" + state.selectedWindow).find(".window").hide();
     var cacheParamValue = (new Date()).getTime();
-    script += "?cache=" + cacheParamValue + "&id=" + state.selectedWindow;
+    script = script + "?cache=" + cacheParamValue + "&id=" + state.selectedWindow +
+             "&env=" + encodeURIComponent(JSON.stringify(state.wsh.env)) + "&params=" + params;
     $(frame).attr("src", script);
     updateTerminals();
 }
