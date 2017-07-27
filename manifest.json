@@ -10,6 +10,5 @@
   "content_scripts": [{
     "js": [ "js/system.js" ],
     "all_frames": true
-  }],
-  "content_security_policy": "script-src 'self' 'unsafe-eval' 'sha256-osXKjw9sH5NSjB8v3Mc8pTgLpwQdqBD4szsTvRsqvQM='; object-src 'self'"
+  }]
 }
