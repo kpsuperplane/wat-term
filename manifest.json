@@ -6,11 +6,9 @@
   "chrome_url_overrides" : {
     "newtab": "index.html"
   },
-  "permissions": [
-          "storage", "<all_urls>"],
+  "permissions": ["storage"],
   "content_scripts": [{
-    "matches": [ "<all_urls>" ],
-    "js": [ "system.js" ],
+    "js": [ "js/system.js" ],
     "all_frames": true
   }],
   "content_security_policy": "script-src 'self' 'unsafe-eval' 'sha256-osXKjw9sH5NSjB8v3Mc8pTgLpwQdqBD4szsTvRsqvQM='; object-src 'self'"

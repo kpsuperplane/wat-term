@@ -404,7 +404,8 @@ function receiveMessage(event) {
         killTerminal(id);
     }
     else if (parts[0] === "env") {
-        setEnv(parts[1], parts[2]);
+        state.setEnv(parts[1], parts[2]);
+        updateTerminals();
     }
 }
 
