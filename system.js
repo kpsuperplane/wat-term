@@ -537,9 +537,11 @@ function processTerminalCommand(command, logInTerminal) {
                 url: path,
                 async: false,
                 success: function(data) {
-                    evaluateScript(path, state.wfs, getCurrentTerminal(),
-                    $("#" + state.selectedWindow).find(".terminalScriptUI")[0],
-                    parts.slice(1, parts.length));
+                    evaluateScript(
+                        path, state.wfs, getCurrentTerminal(),
+                        $("#" + state.selectedWindow).find(".terminalScriptUI")[0],
+                        parts.slice(1, parts.length)
+                    );
                 }
             }).fail(function() {
                 getCurrentTerminal().output += errorString(command, "command not found");
@@ -550,24 +552,14 @@ function processTerminalCommand(command, logInTerminal) {
     updateTerminals();
 }
 
-function splitSpace(string) {
-    var parts = string.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g);
-    if (parts != null) {
-        for (var i = 0; i < parts.length; i++) {
-            parts[i] = parts[i].replace(/"/g, "");
-            parts[i] = parts[i].replace(/'/g, "");
-        }
-        return parts;
-    }
-    return [""];
-}
+
 
 // Forks the Process over to an external script.
 // script:      script to be evaled
 // wfs:         reference to the filesystem
 // params:      list of parameters passed into script
 // terminal:    reference to the terminal
-function evaluateScript(script, wfs, params, terminal, frame) {
+function evaluateScript(script, wfs, terminal, frame, params) {
     // Functions accessible by script
     terminal.inProg = true;
 
@@ -577,5 +569,26 @@ function evaluateScript(script, wfs, params, terminal, frame) {
     script = script + "?cache=" + cacheParamValue + "&id=" + state.selectedWindow +
              "&env=" + encodeURIComponent(JSON.stringify(state.wsh.env)) + "&params=" + params;
     $(frame).attr("src", script);
+    updateTerminals();
+}
+
+window.addEventListener("message", receiveMessage, false);
+
+function receiveMessage(event) {
+    var parts = event.data.split("|");
+    if (parts[0] === "done") {
+        var id = parts[1];
+        killTerminal(id);
+    }
+    else if (parts[0] === "env") {
+        setEnv(parts[1], parts[2]);
+    }
+}
+
+function killTerminal(id) {
+    $("#" + id).find(".terminalScriptUI").hide();
+    $("#" + id).find(".window").show();
+    state.getTerminal(id).inProg = false;
+    selectedWindow = id;
     updateTerminals();
 }
