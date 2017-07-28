@@ -3,6 +3,9 @@
   "name": "WatTerm",
   "version": "0.1",
   "description": "Transforms your new tab page into a multi-windowed terminal environment.",
+  "icons": {
+    "512": "icon.png"
+  },
   "chrome_url_overrides" : {
     "newtab": "index.html"
   },
