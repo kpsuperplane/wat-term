@@ -2,12 +2,12 @@
 var state;
 
 var defaultWindow =
-'<div class="windowWrapper" style="height: $(SIZE)" id="$(FULLID)" tabindex="1">\
+'<div class="windowWrapper" style="height: $(HEIGHT)%; width: $(WIDTH)%; left: $(X)%; top:$(Y)%;" id="$(FULLID)" tabindex="1">\
     <div style="height: 0px">&nbsp;</div>\
     <iframe class="terminalScriptUI" style="display:none"></iframe>\
-    <div class="window" id="$(ID)">$(TERM)</div>\
+    <div class="window" id="window$(ID)">$(TERM)</div>\
+    <div class="windowBottomInfo">$(ID) ($(FULLID))<span style="float:right">$(X), $(Y), $(WIDTH), $(HEIGHT)</span></div>\
 </div>';
-var defaultColumn = '<div class="column" id="$(ID)" style="width: $(SIZE)">$(CONTENT)</div>';
 var defaultTerminal =
     '<div class="terminalWrapper">\
         <div class="hidden"><input type="text" class="textbox"></div>\
@@ -21,73 +21,12 @@ $(document).ready(function() {
         buildWindows();
     });
 
-    document.addEventListener('keydown', globalOnKeyDown, false);
+    //document.addEventListener('keydown', globalOnKeyDown, false);
 });
 
-function globalOnKeyDown(e) {
-    var changed = false;
-    var updated = false;
-    var row = getRow(state.selectedWindow);
-    var col = getCol(state.selectedWindow);
-
-    if (e.shiftKey && e.keyCode === KEY_LEFT_ARROW) {
-        state.shiftLeft();
-        updated = true;
-    }
-    else if (e.shiftKey && e.keyCode === KEY_RIGHT_ARROW) {
-        state.shiftRight();
-        updated = true;
-    }
-    else if (e.shiftKey && e.keyCode === KEY_UP_ARROW) {
-        if (row != 0) {
-            state.getWindow(col, row - 1).height--;
-            state.getWindow(col, row).height++;
-        }
-        else {
-            state.getWindow(col, row + 1).height++;
-            state.getWindow(col, row).height--;
-        }
-        updated = true;
-    }
-    else if (e.shiftKey && e.keyCode === KEY_DOWN_ARROW) {
-        if (row != state.columns[col].windows.length - 1) {
-            state.getWindow(col, row + 1).height--;
-            state.getWindow(col, row).height++;
-        }
-        else {
-            state.getWindow(col, row - 1).height++;
-            state.getWindow(col, row).height--;
-        }
-        updated = true;
-    }
-    else if (e.ctrlKey && e.shiftKey && e.keyCode === KEY_I) {
-        var collapse = state.getWindow(col, row).height / 2;
-        state.getWindow(col, row).height = collapse;
-        state.addWindow(col, row, new Window(collapse));
-        changed = true;
-    }
-    else if (e.ctrlKey && e.shiftKey && e.keyCode === KEY_K) {
-        var collapse = state.getWindow(col, row).height / 2;
-        state.getWindow(col, row).height = collapse;
-        state.addWindow(col, row + 1, new Window(collapse));
-        changed = true;
-    }
-    else if (e.ctrlKey && e.shiftKey && e.keyCode === KEY_J) {
-        var collapse = state.getColumn(col).width / 2;
-        state.getColumm(col).width = collapse;
-        state.addColumn(col, new Column(collapse));
-        changed = true;
-    }
-    else if (e.ctrlKey && e.shiftKey && e.keyCode === KEY_L) {
-        var collapse = state.getColumn(col).width / 2;
-        state.getColumn(col).width = collapse;
-        state.addColumn(col + 1, new Column(collapse));
-        changed = true;
-    }
-    if (changed || updated) {
-        buildWindows();
-    }
-}
+/*function globalOnKeyDown(e) {
+    
+}*/
 
 function buildWindows() {
     var background = state.getEnv("background");
@@ -104,22 +43,18 @@ function buildWindows() {
     $("body").css("background-size", "cover");
 
     var content = "";
-    for (var i = 0; i < state.columns.length; i++) {
-        var newCol = defaultColumn.replace("$(ID)", "column" + i)
-                                  .replace("$(SIZE)", state.getColumn(i).width + "%");
 
-        var colContent = "";
-        for (var j = 0; j < state.columns[i].windows.length; j++) {
-            var newWin = defaultWindow.replace("$(ID)", "window" + i)
-                                      .replace("$(FULLID)", i + DELIMITER + j)
-                                      .replace("$(SIZE)", state.getWindow(i, j).height + "%")
-                                      .replace("$(TERM)", defaultTerminal);
-            colContent += newWin;
-        }
-        newCol = newCol.replace("$(CONTENT)", colContent);
-        content += newCol;
+    for (var j = 0; j < state.windows.length; j++) {
+        var newWin = defaultWindow.replaceAll("$(ID)", j)
+                                    .replaceAll("$(FULLID)", state.windows[j].id)
+                                    .replaceAll("$(HEIGHT)", state.windows[j].height)
+                                    .replaceAll("$(WIDTH)", state.windows[j].width)
+                                    .replaceAll("$(X)", state.windows[j].x)
+                                    .replaceAll("$(Y)", state.windows[j].y)
+                                    .replaceAll("$(TERM)", defaultTerminal);
+        content += newWin;
     }
-    $("body").html(content);
+    $("body").html("<div class='globalWrapper'>" + content + "</div>");
 
     bindEvents();
     $("#" + state.selectedWindow).children(".window").addClass("selected");
@@ -129,19 +64,18 @@ function buildWindows() {
 
 function restoreTerminalStates() {
     var oldSelectedWindow = state.selectedWindow;
-    for (var i = 0; i < state.columns.length; i++) {
-        for (var j = 0; j < state.columns[i].windows.length; j++) {
-            if (state.columns[i].windows[j].terminal.inProg) {
-                state.selectedWindow = i + DELIMITER + j;
-                processTerminalCommand(state.columns[i].windows[j].terminal.runningCommand, false);
-            }
+    
+    for (var j = 0; j < state.windows.length; j++) {
+        if (state.windows[j].terminal.inProg) {
+            state.selectedWindow = state.windows[j].id;
+            processTerminalCommand(state.windows[j].terminal.runningCommand, false);
         }
     }
-    state.selectedWindow = oldSelectedWindow;
+    state.selectWindow(oldSelectedWindow);
 }
 
 function resetTerminals() {
-    $(".windowWrapper").each(function(index, e) {
+    $(".windowWrapper").each(function(index, e) {9
        var id = $(e).attr("id");
        state.getTerminal(id).inProg = false;
     });
@@ -232,6 +166,14 @@ function updateTerminals() {
     });
 
     state.save();
+}
+
+function updateWindowLocationAndSize(id) {
+    var window = state.getWindow(id);
+    $("#" + id).css("left", window.x + "%");
+    $("#" + id).css("top", window.y + "%");
+    $("#" + id).css("width", window.width + "%");
+    $("#" + id).css("height", window.height + "%");
 }
 
 function makePrompt(terminal) {
@@ -388,6 +330,7 @@ function evaluateScript(script, wfs, terminal, frame, params) {
 
     $(frame).show();
     $("#" + state.selectedWindow).find(".window").hide();
+    $("#" + state.selectedWindow).find(".windowBottomInfo").hide();
     var cacheParamValue = (new Date()).getTime();
     script = script + "?cache=" + cacheParamValue + "&id=" + state.selectedWindow +
              "&env=" + encodeURIComponent(JSON.stringify(state.wsh.env)) + "&params=" + params;
@@ -412,6 +355,7 @@ function receiveMessage(event) {
 function killTerminal(id) {
     $("#" + id).find(".terminalScriptUI").hide();
     $("#" + id).find(".window").show();
+    $("#" + id).find(".windowBottomInfo").show();
     state.getTerminal(id).inProg = false;
     selectedWindow = id;
     updateTerminals();

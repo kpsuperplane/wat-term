@@ -195,5 +195,26 @@ var Commands = {
                 });
             }
         }
+    },
+    "window": {
+        run: function(parts, workingDirectory, workingDirectoryPath) {
+            if (parts.length < 2) {
+                getCurrentTerminal().output += errorString(parts[0], "Expected more parameters");
+            }
+            else if (parts[1] == "vs") {
+                state.verticalSplit(state.getWindowIndexFromId(state.selectedWindow));
+            }
+            else if (parts[1] == "hs") {
+                state.horizontalSplit(state.getWindowIndexFromId(state.selectedWindow));
+            }
+            else if (parts[1] == "list") {
+                getCurrentTerminal().output += "<p><b>Windows: </b></p>";
+                for (var i = 0; i < state.windows.length; i++) {
+                    var window = state.windows[i];
+                    getCurrentTerminal().output += "<p>" + i + " (" + window.id + "): " 
+                        + window.x + ", " +  window.y + ", " + window.width + ", " + window.height + "</p>";
+                }
+            }
+        }
     }
 }

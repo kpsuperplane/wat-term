@@ -1,11 +1,3 @@
-function getCol(a) {
-    return parseInt(a.split(DELIMITER)[0]);
-}
-
-function getRow(a) {
-    return parseInt(a.split(DELIMITER)[1]);
-}
-
 function splitSpace(string) {
     var parts = string.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g);
     if (parts != null) {
@@ -17,3 +9,7 @@ function splitSpace(string) {
     }
     return [""];
 }
+String.prototype.replaceAll = function(search, replacement) {
+    var target = this;
+    return target.split(search).join(replacement);
+};

@@ -1,6 +1,6 @@
 class State {
     constructor () {
-        this.columns = [new Column(100)];
+        this.windows = [new Window(0, 0, 100, 100)];
         this.wfs = createWelcomeDirectory();
         this.wsh = {
             // environmental variables
@@ -17,14 +17,14 @@ class State {
             // alias mappings
             aliases: [],
         };
-        this.selectedWindow = "0" + DELIMITER + "0";
+        this.selectedWindow = this.windows[0].id;
         this.selectWindow(this.selectedWindow);
     }
 
     load (callback) {
         var defaultStateObject = {};
         defaultStateObject[STATE_KEY] = {
-            columns: [new Column(100)],
+            windows: [new Window(0, 0, 100, 100)],
             wfs: createWelcomeDirectory(),
             wsh: {
                 // environmental variables
@@ -41,30 +41,39 @@ class State {
         var self = this;
         chrome.storage.local.get(defaultStateObject, function(items) {
             var newState = items[STATE_KEY];
+            console.log("Retrieved Saved: ");
+            console.log(newState);
             self.username = newState.username;
-            self.columns = newState.columns;
+            self.windows = newState.windows;
             self.wfs = newState.wfs;
             self.wsh = newState.wsh;
             callback();
         });
     }
 
-    save () {
+    save() {
+        console.log("Saved State");
         var savedObject = {};
         savedObject[STATE_KEY] = this;
         chrome.storage.local.set(savedObject);
     }
 
     getTerminal(id) {
-        return this.columns[getCol(id)].windows[getRow(id)].terminal;
+        console.log("GetTerminal: " + id);
+        return this.getWindow(id).terminal;
     }
 
-    getWindow(col, row) {
-        return this.columns[col].windows[row];
+    getWindowIndexFromId(id) {
+        for (var i = 0; i < this.windows.length; i++) {
+            if (this.windows[i].id == id) {
+                return i;
+            }
+        }
+        return 0;
     }
 
-    getColumn (col) {
-        return this.columns[col];
+    getWindow(id) {
+        return this.windows[this.getWindowIndexFromId(id)];
     }
 
     addWindow(col, row, newWindow) {
@@ -97,49 +106,41 @@ class State {
     }
 
     selectWindow(id) {
+        console.log("Selected Window " + id);
         $("#" + this.selectedWindow).find(".window").removeClass("selected");
         this.selectedWindow = id;
         $("#" + this.selectedWindow).find(".window").addClass("selected");
         $("#" + this.selectedWindow).find(".textbox").focus();
     }
 
-    shiftLeft() {
-        var row = getRow(this.selectedWindow);
-        var col = getCol(this.selectedWindow);
-        if (col != 0) {
-            this.columns[col - 1].width--;
-            this.columns[col].width++;
-        }
-        else {
-            this.columns[col + 1].width++;
-            this.columns[col].width--;
-        }
+    horizontalSplit(index) {
+        var h = this.windows[index].height;
+        var ho = Math.floor(h / 2);
+        var hn = Math.ceil(h / 2);
+        this.windows[index].height = ho;
+        this.windows.push(new Window(this.windows[index].x, 
+            this.windows[index].y + ho, this.windows[index].width, hn));
+        buildWindows();
     }
 
-    shiftRight() {
-        var row = getRow(this.selectedWindow);
-        var col = getCol(this.selectedWindow);
-        if (col != this.columns.length - 1) {
-            this.columns[col + 1].width--;
-            this.columns[col].width++;
-        }
-        else {
-            this.columns[col - 1].width++;
-            this.columns[col].width--;
-        }
-    }
-}
-
-class Column {
-    constructor (w) {
-        this.width = w;
-        this.windows = [new Window(100)];
+    verticalSplit(index) {
+        var w = this.windows[index].width;
+        var wo = Math.floor(w / 2);
+        var wn = Math.ceil(w / 2);
+        this.windows[index].width = wo;
+        this.windows.push(new Window(this.windows[index].x + wn, 
+            this.windows[index].y, wn, this.windows[index].height));
+        buildWindows();
     }
 }
 
 class Window {
-    constructor (h) {
+    constructor (x, y, w, h) {
+        this.width = w;
+        this.x = x;
+        this.y = y;
         this.height = h;
+        this.id = new Date().getTime();
         this.terminal = new Terminal();
     }
 }
