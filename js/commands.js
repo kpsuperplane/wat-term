@@ -215,6 +215,48 @@ var Commands = {
                         + window.x + ", " +  window.y + ", " + window.width + ", " + window.height + "</p>";
                 }
             }
+            else {
+                if (parts.length < 3) {
+                    getCurrentTerminal().output += errorString(parts[0], "Not enough parameters.");
+                }
+                var result;
+                if (parts[1] == "left") {
+                    result = state.getBorderingLeft(state.getWindowIndexFromId(state.selectedWindow));
+                }
+                else if (parts[1] == "right") {
+                    result = state.getBorderingRight(state.getWindowIndexFromId(state.selectedWindow));
+                }
+                else if (parts[1] == "top") {
+                    result = state.getBorderingTop(state.getWindowIndexFromId(state.selectedWindow));
+                }
+                else  {
+                    result = state.getBorderingBottom(state.getWindowIndexFromId(state.selectedWindow));
+                }
+                if (result == false) {
+                    getCurrentTerminal().output += errorString(parts[0], "Cannot shift " + parts[1] + " border");
+                }
+                else {
+                    var change = 0;
+                    if (parts[2] == "+" || parts[2] == "-") {
+                        change = parts[2] == "+" ? 1 : -1;
+                    }
+                    else {
+                        change = parseInt(parts[2]);
+                    }
+                    var c = state.getChangeMatrix(parts[1], change);
+                    state.getWindow(state.selectedWindow).x += c[0];
+                    state.getWindow(state.selectedWindow).y += c[1];
+                    state.getWindow(state.selectedWindow).width += c[2];
+                    state.getWindow(state.selectedWindow).height += c[3];
+                    result.map(function(w) { 
+                        w.x += c[4];
+                        w.y += c[5]; 
+                        w.width += c[6];
+                        w.height += c[7];
+                    });
+                    buildWindows();
+                }
+            }
         }
     }
 }

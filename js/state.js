@@ -132,6 +132,83 @@ class State {
             this.windows[index].y, wn, this.windows[index].height));
         buildWindows();
     }
+
+    // the following commands either returns a list of windows that are exact
+    //   borders of the given index, or false if there are none
+
+    borderingComp(index, borderingComp, boundaryComp1, boundaryComp2) {
+        var borderingWindows = [];
+        var a = this.windows[index];
+        for (var i = 0; i < this.windows.length; i++) {
+            if (i != index) {
+                var b = this.windows[i];
+                if (borderingComp(a, b)) {
+                    // Bordering
+                    if (boundaryComp1(a, b)) {
+                        borderingWindows.push(b);
+                    }
+                    else if (boundaryComp2(a, b)) {
+                        continue;
+                    }
+                    else {
+                        // Borders on edge but exceeds limit.
+                        return false;
+                    }
+                }
+            }
+        }
+        if (borderingWindows.length == 0) {
+            return false;
+        }
+        return borderingWindows;
+    }
+
+    getBorderingLeft(index) {
+        return this.borderingComp(index, 
+            function(a, b) { return b.x + b.width == a.x; },
+            function(a, b) { return b.y >= a.y && b.y + b.height <= a.y + a.height; },
+            function(a, b) { return b.y >= a.y + a.height || b.y + b.height <= a.y; });
+    }
+    
+    getBorderingRight(index) {
+        return this.borderingComp(index, 
+            function(a, b) { return b.x == a.x + a.width; },
+            function(a, b) { return b.y >= a.y && b.y + b.height <= a.y + a.height; },
+            function(a, b) { return b.y >= a.y + a.height || b.y + b.height <= a.y; });
+    }
+
+    getBorderingTop(index) {
+        return this.borderingComp(index, 
+            function(a, b) { return b.y + b.height == a.y; },
+            function(a, b) { return b.x >= a.x && b.x + b.width <= a.x + a.width; },
+            function(a, b) { return b.x >= a.x + a.width || b.x + b.width <= a.x; });
+    }
+
+    getBorderingBottom(index) {
+        return this.borderingComp(index, 
+            function(a, b) { return b.y == a.y + a.height; },
+            function(a, b) { return b.x >= a.x && b.x + b.width <= a.x + a.width; },
+            function(a, b) { return b.x >= a.x + a.width || b.x + b.width <= a.x; });
+    }
+
+    // edge is one of left, right, top, or bottom
+    // c is 1 for +, -1 for -
+    getChangeMatrix(edge, c) { 
+        // c is current, r is rest, d is delta
+        // returns [dcx, dcy, dcw, dch, drx, dry, drw, drh]
+        if (edge == "left") {
+            return [-c, 0, c, 0, 0, 0, -c, 0];
+        }
+        else if (edge == "right") {
+            return [0, 0, c, 0, c, 0, -c, 0];
+        }
+        else if (edge == "top") {
+            return [0, -c, 0, c, 0, 0, 0, -c];
+        }
+        else {
+            return [0, 0, 0, c, 0, c, 0, -c];
+        }
+    }
 }
 
 class Window {
